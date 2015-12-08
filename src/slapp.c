@@ -8,21 +8,38 @@ static TextLayer *s_output_layer;
 int previousSlapCount = 0;
 time_t lastSlapTime = 0;
 
+static void send_int(int key, int value) {
+  DictionaryIterator *iter;
+  app_message_outbox_begin(&iter);
+  dict_write_int(iter, key, &value, sizeof(int), true);
+  app_message_outbox_send();
+}
+
 static void worker_message_handler(uint16_t type, AppWorkerMessage *data) {
   if (type == SLAPS) {
     int slaps = data->data0;
     lastSlapTime = data->data1;
+    
     DictionaryIterator *iterator;
     app_message_outbox_begin(&iterator);
     int key = 0;
     int value = (long int) lastSlapTime;
-    dict_write_int(iterator, key, &value, sizeof(int), true );
+   
+    dict_write_int(iterator, key, &value, sizeof(int), true);
     if(slaps > previousSlapCount) {
       previousSlapCount = slaps;
-      app_message_outbox_send();
+      send_int(key, value);
       vibes_short_pulse();
     }
   }
+}
+
+static void outbox_failed_callback(DictionaryIterator *iterator, AppMessageResult reason, void *context) {
+  APP_LOG(APP_LOG_LEVEL_ERROR, "Slapp not registered!");
+}
+
+static void outbox_sent_callback(DictionaryIterator *iterator, void *context) {
+  APP_LOG(APP_LOG_LEVEL_INFO, "Slapp registered!");
 }
 
 static void select_click_handler(ClickRecognizerRef recognizer, void *context) {
@@ -75,6 +92,10 @@ static void main_window_unload(Window *window) {
 }
 
 static void init() {
+  //Register Callbacks
+  app_message_register_outbox_failed(outbox_failed_callback);
+  app_message_register_outbox_sent(outbox_sent_callback);
+  
   // Create main Window
   s_main_window = window_create();  
   window_set_click_config_provider(s_main_window, click_config_provider);
